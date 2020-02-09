@@ -27,7 +27,7 @@ int init_sock()
     int len;
     struct sockaddr_in address;
     int result;
-    sock = err_handler(socket(AF_INET, SOCK_STREAM,0), "socket");
+    sock = err_handler(socket(AF_INET, SOCK_STREAM, 0), "socket");
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = inet_addr(ip_addr);
     address.sin_port = htons(21);
@@ -46,7 +46,7 @@ int init_data()
     struct sockaddr_in address;;
     char buff[128];
 
-    send(sock,"PASV\r\n",strlen("PASV\r\n"),0);
+    send(sock,"PASV\n",strlen("PASV\n"),0);
     recv(sock, buff, 128, 0);
     printf("%s\n", buff);
 
@@ -78,19 +78,20 @@ int init_data()
     return 0;
 }
 
-int readServ()
+int readServ(int sock)
 {
     int result;
     fd_set readfds;
-    FD_ZERO(&readfds);
-    FD_SET(sock, &readfds);
     struct timeval timeout;
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
     do
     {
-        char buff[512] = {' '};
-        recv(sock, &buff, 512, 0);
+        FD_ZERO(&readfds);
+        FD_SET(sock, &readfds);
+        char buff[2048] = {' '};
+        if(recv(sock, &buff, 2048, 0) == 0)
+            return 0;
         printf("%s\n", buff);
         if(strstr(buff, "530") != NULL || strstr(buff, "221") != NULL)
             return -1;
@@ -102,7 +103,7 @@ int readServ()
 int send_command(char *buf, int size)
 {
     send(sock, buf, size, 0);
-    if(readServ() == -1)
+    if(readServ(sock) == -1)
         return -1;
     return 0;
 }
@@ -115,11 +116,11 @@ int login()
 
     printf("Введите имя\n");
     scanf("%s", name);
-    sprintf(str,"USER %s\r\n", name);
+    sprintf(str,"USER %s\n", name);
     send_command(str, strlen(str));
 
     scanf("%s", pass);
-    sprintf(str,"PASS %s\r\n", pass);
+    sprintf(str,"PASS %s\n", pass);
     if(send_command(str, strlen(str)) == -1)
         return -1;
     return 0;
@@ -134,7 +135,7 @@ int get(char *file, char *name)
     FILE *f;
     int read = 0;
 
-    sprintf(str, "RETR %s\r\n", file);
+    sprintf(str, "RETR %s\n", file);
     send(sock, str, strlen(str), 0);
  
     recv(sock, size, 512, 0);
@@ -156,9 +157,21 @@ int get(char *file, char *name)
     }while(read < file_size);
     fclose(f);
 
-    //send(sock,"PASV\r\n",strlen("PASV\r\n"),0);
-    readServ();
+    readServ(sock);
     return 0;
+}
+
+
+int list()
+{
+    send_command("LIST\n", strlen("LIST\n"));
+    readServ(data_sock);
+    if(init_data() == -1)
+    {
+        close(sock);
+        exit(-1);
+    }
+    return 1;
 }
 
 int main(int argc, char **argv)
@@ -171,7 +184,7 @@ int main(int argc, char **argv)
     sock = init_sock();
     if(sock == -1)
         exit(-1);
-    readServ();
+    readServ(sock);
     if(login() == -1)
     {
         close(sock);
@@ -182,12 +195,12 @@ int main(int argc, char **argv)
         exit(-1);
     while(cycle)
     {
-        printf("Введите команду\n0 - quit\n1 - get\n2 - help\n3 - user\n");
+        printf("Введите команду\n0 - quit\n1 - get\n2 - help\n3 - user\n4 - list\n");
         scanf("%d", &command);
         switch(command)
         {
             case 0:
-                send_command("QUIT\r\n", strlen("QUIT\r\n"));
+                send_command("QUIT\n", strlen("QUIT\n"));
                 cycle = 0;
                 break;
             case 1:
@@ -208,7 +221,7 @@ int main(int argc, char **argv)
                 break;
             }
             case 2:
-                send_command("HELP\r\n", strlen("LIST\r\n"));
+                send_command("HELP\n", strlen("HELP\n"));
                 break;
             case 3:
                 if(login() == -1)
@@ -219,6 +232,8 @@ int main(int argc, char **argv)
                     exit(-1);
                 }
                 break;
+            case 4:
+                list();
 
         }
     }
